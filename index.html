@@ -1,1 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Custom Trading Card Maker</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    .card { border: 1px solid #ccc; padding: 10px; margin: 10px 0; width: 300px; }
+    img { max-width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>Custom Trading Cards</h1>
+  <p>
+    <strong>Note:</strong> You need a GitHub personal access token (PAT) with <code>repo</code> scope to save cards.
+  </p>
+  <div>
+    <input type="password" id="token" placeholder="GitHub PAT" style="width:300px">
+    <button onclick="fetchCards()">Load Cards</button>
+  </div>
+  <hr>
+  <form id="cardForm">
+    <h2>Create Card</h2>
+    <input name="name" placeholder="Card Name" required><br>
+    <textarea name="description" placeholder="Description" required></textarea><br>
+    <input name="attack" type="number" placeholder="Attack" required>
+    <input name="defense" type="number" placeholder="Defense" required><br>
+    <input name="image" type="file" accept="image/*"><br>
+    <button type="submit">Add Card</button>
+  </form>
+  <hr>
+  <div id="cards"></div>
 
+  <script>
+    // Repo config: these are set for your repo!
+    const owner = "Skaberson";
+    const repo = "Tcguplaod";
+    const cardsFile = "cards.json";
+    let cardsSha = "";
+
+    async function fetchCards() {
+      const token = document.getElementById('token').value;
+      if (!token) { alert("Enter your GitHub token!"); return; }
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${cardsFile}`, {
+        headers: { Authorization: `token ${token}` }
+      });
+      if (!res.ok) {
+        alert("Failed to load cards.json. Check your repo name and token!");
+        return;
+      }
+      const data = await res.json();
+      cardsSha = data.sha;
+      const json = JSON.parse(atob(data.content));
+      renderCards(json);
+    }
+
+    function renderCards(cards) {
+      document.getElementById('cards').innerHTML = cards.map(card =>
+        `<div class="card">
+          <h3>${card.name}</h3>
+          <p>${card.description}</p>
+          <p>Attack: ${card.attack}, Defense: ${card.defense}</p>
+          ${card.image ? `<img src="${card.image}" alt="card image">` : ""}
+        </div>`
+      ).join('');
+    }
+
+    document.getElementById('cardForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const token = document.getElementById('token').value;
+      if (!token) { alert("Enter GitHub token!"); return; }
+
+      // Fetch current cards
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${cardsFile}`, {
+        headers: { Authorization: `token ${token}` }
+      });
+      if (!res.ok) { alert("Could not fetch cards.json!"); return; }
+      const data = await res.json();
+      cardsSha = data.sha;
+      let cards = JSON.parse(atob(data.content));
+
+      // Prepare new card
+      const form = e.target;
+      const newCard = {
+        name: form.name.value,
+        description: form.description.value,
+        attack: form.attack.value,
+        defense: form.defense.value,
+        image: ""
+      };
+
+      // Handle image upload as Data URL
+      const file = form.image.files[0];
+      if (file) {
+        newCard.image = await new Promise(res => {
+          const reader = new FileReader();
+          reader.onload = e => res(e.target.result);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      cards.push(newCard);
+
+      // Update cards.json in repo
+      const updateRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${cardsFile}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: "Add new card",
+          content: btoa(JSON.stringify(cards, null, 2)),
+          sha: cardsSha
+        })
+      });
+
+      if (updateRes.ok) {
+        alert("Card added!");
+        fetchCards();
+        form.reset();
+      } else {
+        alert("Failed to update cards.json!");
+      }
+    };
+  </script>
+</body>
+</html>
